@@ -1,0 +1,108 @@
+---
+title: "LLM-SD Networkplot"
+author: "Elisa Mens"
+date: "2023-06-03"
+output: 
+  html_document:
+    code_folding: "hide"
+---
+### Setup
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, cache = TRUE )
+
+rm(list = ls())
+options(digits = 5)
+
+all_installed_packaged <- installed.packages()[, "Package"]
+
+#Nesceccary libraries
+library("tidyverse")
+library("ggplot2")
+if (!"qgraph" %in% all_installed_packaged) {install.packages("qgraph")}
+library('qgraph')
+if (!"Polychrome" %in% all_installed_packaged) {install.packages("Polychrome")}
+library('Polychrome')
+
+#original_df <- read.csv('set_path', sep =  ';', header = TRUE)
+#ranking_items <- read_csv('set_path', col_names = T,show_col_types = F)
+
+head(original_df) #dataframe of whole survey
+head(ranking_items) #dataframe of ranking [col = Index 1, Item_1, Index 2, Item 2, CSI]
+```
+$~$
+
+### Creating Network plot 
+
+```{r}
+constructs <- original_df[1:320,c(2,5)] %>% rename(Item_1 = Item_English) #df [col = Construct, Item, Index] 
+constructs$index <- 1:nrow(constructs) + 1 #Index same as original file
+constructs[65:74, 1] <- 'Psychopathology Symptoms' #abbriaviate subtypes into one construct
+
+#Which construct are measured by multiple items?
+selection <- which(duplicated(constructs$Construct))
+
+#
+x <- ranking_items[,c(2,3,4,5,9)] #select [Index 1, Item_1, Index 2, Item 2, CSI]
+x <- x[order(x$Index_1),] 
+x$Index_1 <- x$Index_1 + 2 #Index same as original file
+x$Index_2 <- x$Index_2 + 2 #Index same as original file
+
+g <- data.matrix(x[,c(1,3,5)])
+xg <- left_join(as.data.frame(g), x[,c(1,2)], by = 'Index_1')
+xg <- xg[!duplicated(xg$Index_1), ]
+items <- as.vector(xg$Item_1)
+labelnames = as.vector(xg$Index_1)
+
+#Color of the nodes
+groupingvalue <- unique(constructs$Construct[selection])
+value <- list()
+for(i in 1:length(groupingvalue)) {
+  variable <- constructs$index[constructs$Construct == groupingvalue[i]]
+  value[[i]] <- variable
+}
+
+names(value) <-as.vector(groupingvalue)
+set.seed(13)
+COLOR = createPalette(length(value),  c("#ff0000", "#00ff00", "#0000ff"))
+
+#All construct operationalized by only one item recieve color white
+singles <- as.vector(unique(x$Index_1))
+singles <- list(singles[!(singles %in% selection)])
+names(singles) <- 'Solitary'
+value <- c(singles, value) 
+COLOR = c('white', COLOR)
+#swatch(COLOR)
+
+#Color of the edges
+colorindex  <-  x$csi_mean 
+colorindex[x$csi_mean > .95] <- 'firebrick4'
+colorindex[x$csi_mean < .95 & x$csi_mean > .9 ] <- 'coral3'
+colorindex[x$csi_mean  < .9 & x$csi_mean > .85 ] <- 'steelblue4'
+colorindex[x$csi_mean  < .85 & x$csi_mean > .8 ] <- 'lightblue4'
+colorindex[x$csi_mean  < .8 & x$csi_mean > .75 ] <- 'cornsilk2'
+colorindex[x$csi_mean  < .75] <- 'gray100'
+
+ItemPlot <- qgraph(
+  input =g,
+  threshold = .75,
+  node.width = 1.5,
+  node.height = 1.5,
+  layout = 'spring',
+  groups = value,
+  edgelist = T,
+  weighted = T,
+  shape = 'circle',
+  color = COLOR, #nodes colored after construct
+  edge.color = colorindex, #edges colored after strength 
+  arrows = FALSE,
+  label.cex = 1.4,
+  label.prop = 0.9,
+  legend = F,
+  repulsion = .82, #preventing overlap
+  borders = F
+  
+)
+```
+
+
